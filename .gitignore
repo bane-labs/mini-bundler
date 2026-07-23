@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+**/dist/
+tsconfig.tsbuildinfo
+
+# Environment (contains secrets — NEVER commit)
+.env
+.env.local
+.env.*.local
+
+# Foundry / Solidity
+cache/
+out/
+broadcast/
+artifacts/
+coverage/
+coverage.json
+
+# TypeScript
+typechain/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+yarn-error.log
+npm-debug.log*

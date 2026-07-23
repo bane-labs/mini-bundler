@@ -1,0 +1,49 @@
+{
+  "name": "mini-bundler",
+  "version": "1.0.0",
+  "description": "Production-grade ERC-4337 bundler for NeoX TestNet",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "format": "prettier --write src/",
+    "format:check": "prettier --check src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "erc-4337",
+    "bundler",
+    "account-abstraction",
+    "neox",
+    "ethereum"
+  ],
+  "author": "",
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@account-abstraction/contracts": "^0.8.0",
+    "@account-abstraction/utils": "^0.6.0",
+    "axios": "^1.18.1",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "viem": "^2.55.4"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.1.1",
+    "prettier": "^3.0.0",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2"
+  }
+}
