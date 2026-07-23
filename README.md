@@ -18,7 +18,7 @@ Implements the full ERC-4337 lifecycle: receive, validate, simulate, bundle, sub
 - **Security** — Calldata/initCode/paymasterAndData size limits, gas overflow protection
 - **Monitoring** — Prometheus-format metrics at `/metrics`
 - **Structured Logging** — INFO/WARN/ERROR/DEBUG levels with UserOp context
-- **Aggregator** — `handleAggregatedOps` support for signature aggregation
+- **Aggregator** — `handleAggregatedOps` low-level support (not exposed via RPC)
 
 ## Architecture
 
@@ -26,9 +26,10 @@ Implements the full ERC-4337 lifecycle: receive, validate, simulate, bundle, sub
 src/
 ├── index.ts                  # Express server entrypoint
 ├── config.ts                 # Environment config (dotenv)
+├── constants.ts              # Shared constants (gas, reputation, pre-verification)
 ├── rpc.ts                    # JSON-RPC method dispatcher
 ├── bundler.ts                # Core bundler: mempool → simulate → profit check → submit → track
-├── entrypoint.ts             # EntryPoint contract interaction
+├── entrypoint.ts             # EntryPoint contract interaction (handleOps, handleAggregatedOps)
 ├── clients.ts                # viem publicClient / walletClient
 ├── abi.ts                    # Contract ABIs
 ├── types.ts                  # TypeScript types (all phases)
@@ -36,9 +37,10 @@ src/
 ├── aaErrors.ts               # Error decoding via @account-abstraction/utils
 ├── profit.ts                 # Bundler profit protection (gas cost vs max payment)
 ├── simulateValidation.ts     # EIP-4337 validation simulation
-├── simulateValidationO.ts    # handleOp execution simulation
+├── simulateHandleOp.ts       # handleOp execution simulation
 │
 ├── rpc/                      # RPC handlers
+│   ├── index.ts
 │   ├── estimateGas.ts        # Real gas estimation via simulation
 │   ├── getReceipt.ts         # Full receipt with gas costs & logs
 │   ├── getByHash.ts          # UserOp lookup by hash
@@ -52,62 +54,58 @@ src/
 ├── reputation/               # ERC-4337 reputation tracking
 ├── security/                 # Rate limiting + validation
 ├── metrics/                  # Prometheus metrics
-├── logging/                  # Structured logger
-│
-├── contracts/                # Solidity contracts
-│   ├── SimplePaymaster.sol   # Accepts all UserOps (no signature check)
-│   └── TestToken.sol
-│
-├── script/
-│   └── DeployPaymaster.s.sol
-│
-└── test/                     # Integration tests
-    ├── sendTestNocall.ts            # Initialize SmartAccount (deploy via UserOp)
-    ├── sendUserOpE2E.ts             # ETH transfer E2E with paymaster
-    ├── sendUserOpERC20Transfer.ts   # ERC20 transfer E2E with paymaster
-    ├── qaTestSuite.ts               # Comprehensive QA tests
-    └── deployFactory.ts             # Factory deployment script
+└── logging/                  # Structured logger
+
+contracts/
+└── SimplePaymaster.sol       # Accepts all UserOps (no signature check)
+
+script/
+└── DeployPaymaster.s.sol     # Foundry deployment script
+
+test/
+└── e2e/
+    ├── qa-test-suite.ts      # Comprehensive QA tests
+    └── send-user-op-e2e.ts   # ETH transfer E2E with paymaster
 ```
 
 ## Quick Start
 
 ```bash
-npm install
+# Install dependencies (packageManager: yarn@1.22.22)
+yarn install
+
+# Configure environment
 cp .env.example .env        # Fill in your values
-npm run dev                  # Start bundler on :3000
+
+# Start bundler on :3000
+yarn dev
 ```
+
+> **Requirements**: Node.js >= 20.0.0
 
 ## Testing
 
 ```bash
-# Step 1: Initialize SmartAccount (deploy via UserOp, no call)
-npx tsx src/test/sendTestNocall.ts
+# ETH transfer E2E with paymaster (poll + verify receipt + balances)
+npx tsx test/e2e/send-user-op-e2e.ts
 
-# Step 2: ETH transfer E2E with paymaster (poll + verify receipt + balances)
-npx tsx src/test/sendUserOpE2E.ts
-
-# Step 3: ERC20 transfer E2E with paymaster (deploy token + mint + transfer)
-npx tsx src/test/sendUserOpERC20Transfer.ts
-
-# QA test suite
-npx tsx src/test/qaTestSuite.ts
+# QA test suite (validation, security, rate limiting, metrics, error handling)
+npx tsx test/e2e/qa-test-suite.ts
 ```
 
 ### Test Types
 
-| Test | Description | Requires |
-|---|---|---|
-| `sendTestNocall.ts` | Initialize SmartAccount — deploy via UserOp with empty callData | Bundler running, NeoX GAS |
-| `sendUserOpE2E.ts` | ETH transfer E2E — polls getUserOperationByHash/getUserOperationReceipt, verifies receipt + EntryPoint deposit + SmartAccount/Owner balance | Bundler running, Paymaster deployed |
-| `sendUserOpERC20Transfer.ts` | ERC20 E2E — deploys TestToken, mints, transfers via SmartAccount, verifies all balances + paymaster deposit | Bundler running, Paymaster deployed |
-| `qaTestSuite.ts` | QA suite — validation, security, rate limiting, metrics, error handling | Bundler running |
+| Test                  | Description                                                                                                                                 | Requires                            |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `send-user-op-e2e.ts` | ETH transfer E2E — polls getUserOperationByHash/getUserOperationReceipt, verifies receipt + EntryPoint deposit + SmartAccount/Owner balance | Bundler running, Paymaster deployed |
+| `qa-test-suite.ts`    | QA suite — validation, security, rate limiting, metrics, error handling                                                                     | Bundler running                     |
 
 ## Running
 
 ```bash
-npm run dev    # Development (auto-reload)
-npm run build  # Compile TypeScript
-npm start      # Production
+yarn dev       # Development (auto-reload via tsx watch)
+yarn build     # Compile TypeScript
+yarn start     # Production
 ```
 
 ## Health Check
@@ -145,36 +143,83 @@ cast send $PAYMASTER \
 
 ## Configuration
 
-| Variable | Default | Description |
-|---|---|---|
-| `RPC_URL` | — | NeoX TestNet RPC endpoint |
-| `PRIVATE_KEY` | — | Bundler signer private key |
-| `ENTRYPOINT` | — | ERC-4337 EntryPoint contract address |
-| `PAYMASTER` | — | SimplePaymaster contract address (for paymaster tests) |
-| `PORT` | `3000` | Server port |
-| `MEMPOOL_MAX_SIZE` | `1000` | Max pending UserOps |
-| `MEMPOOL_MAX_PER_SENDER` | `10` | Max ops per sender |
-| `BUNDLE_MAX_SIZE` | `10` | Max ops per bundle |
-| `BUNDLE_MAX_GAS` | `10000000` | Max gas per bundle |
-| `GAS_BUMP_PERCENT` | `20` | Gas bump for replacements |
-| `LOG_LEVEL` | `INFO` | DEBUG/INFO/WARN/ERROR |
-| `MAX_CALLDATA_LENGTH` | `100000` | Max callData bytes |
-| `MAX_INITCODE_LENGTH` | `100000` | Max initCode bytes |
-| `MAX_GAS_LIMIT` | `10000000` | Max total gas limit |
-| `RATE_LIMIT_IP` | `100` | IP requests per window |
-| `RATE_LIMIT_SENDER` | `20` | Sender ops per window |
+### Core
+
+| Variable      | Default | Description                                  |
+| ------------- | ------- | -------------------------------------------- |
+| `RPC_URL`     | —       | NeoX TestNet RPC endpoint                    |
+| `PRIVATE_KEY` | —       | Bundler signer private key                   |
+| `ENTRYPOINT`  | —       | ERC-4337 EntryPoint contract address         |
+| `PAYMASTER`   | —       | SimplePaymaster contract address (for tests) |
+| `PORT`        | `3000`  | Server port                                  |
+
+### Mempool
+
+| Variable                 | Default  | Description                |
+| ------------------------ | -------- | -------------------------- |
+| `MEMPOOL_MAX_SIZE`       | `1000`   | Max pending UserOps        |
+| `MEMPOOL_MAX_PER_SENDER` | `10`     | Max ops per sender         |
+| `MEMPOOL_TIMEOUT_MS`     | `300000` | Pending op expiration (ms) |
+
+### Bundle Builder
+
+| Variable            | Default    | Description                    |
+| ------------------- | ---------- | ------------------------------ |
+| `BUNDLE_MAX_SIZE`   | `10`       | Max ops per bundle             |
+| `BUNDLE_MAX_GAS`    | `10000000` | Max gas per bundle             |
+| `BUNDLE_TIMEOUT_MS` | `10000`    | Bundle collection timeout (ms) |
+
+### Gas Manager
+
+| Variable                   | Default       | Description                           |
+| -------------------------- | ------------- | ------------------------------------- |
+| `MAX_FEE_PER_GAS_CAP`      | `50000000000` | Max fee per gas ceiling (wei)         |
+| `MAX_PRIORITY_FEE_CAP`     | `3000000000`  | Max priority fee cap (wei)            |
+| `GAS_BUMP_PERCENT`         | `20`          | Gas bump for replacements             |
+| `REPLACEMENT_THRESHOLD_MS` | `30000`       | Time before replacement eligible (ms) |
+| `PENDING_TX_TIMEOUT_MS`    | `120000`      | Pending tx timeout (ms)               |
+
+### Storage
+
+| Variable  | Default               | Description                |
+| --------- | --------------------- | -------------------------- |
+| `DB_PATH` | `./bundler-data.json` | JSON persistence file path |
+
+### Rate Limiting
+
+| Variable                      | Default | Description                   |
+| ----------------------------- | ------- | ----------------------------- |
+| `RATE_LIMIT_IP`               | `100`   | IP requests per window        |
+| `RATE_LIMIT_IP_WINDOW_MS`     | `60000` | IP rate limit window (ms)     |
+| `RATE_LIMIT_SENDER`           | `20`    | Sender ops per window         |
+| `RATE_LIMIT_SENDER_WINDOW_MS` | `60000` | Sender rate limit window (ms) |
+
+### Security
+
+| Variable                    | Default    | Description                    |
+| --------------------------- | ---------- | ------------------------------ |
+| `MAX_CALLDATA_LENGTH`       | `100000`   | Max callData bytes             |
+| `MAX_INITCODE_LENGTH`       | `100000`   | Max initCode bytes             |
+| `MAX_PAYMASTER_DATA_LENGTH` | `100000`   | Max paymasterAndData bytes     |
+| `MAX_GAS_LIMIT`             | `10000000` | Max total gas limit            |
+| `MAX_USEROPS_PER_BUNDLE`    | `30`       | Security cap on ops per bundle |
+
+### Logging & Profit
+
+| Variable                     | Default | Description                   |
+| ---------------------------- | ------- | ----------------------------- |
+| `LOG_LEVEL`                  | `INFO`  | DEBUG/INFO/WARN/ERROR         |
+| `MIN_BUNDLER_MARGIN_PERCENT` | `5`     | Minimum bundler profit margin |
 
 ## Deployed Contracts (NeoX TestNet)
 
-| Contract | Address |
-|---|---|
-| EntryPoint | `0x433709009B8330FDa32311DF1C2AFA402eD8D009` |
+| Contract        | Address                                      |
+| --------------- | -------------------------------------------- |
+| EntryPoint      | `0x433709009B8330FDa32311DF1C2AFA402eD8D009` |
 | SimplePaymaster | `0xc44DD8e895162F56c1c3e3D40e0aE6Ec67345408` |
-| SmartAccount | `0x36622A7314d9C2f47149e66C9Dd42763686Aab0E` |
-| Factory | `0xdaf415b79d5fd2bfccd7846d5a1de9bfdb08a425` |
-| Policy | `0x1212000000000000000000000000000000000002` |
-
----
+| SmartAccount    | `0x36622A7314d9C2f47149e66C9Dd42763686Aab0E` |
+| Factory         | `0xdaf415b79d5fd2bfccd7846d5a1de9bfdb08a425` |
+| Policy          | `0x1212000000000000000000000000000000000002` |
 
 ## Environment Variables (.env)
 
@@ -213,11 +258,12 @@ curl -X POST http://localhost:3000 \
 ### eth_estimateUserOperationGas
 
 Returns realistic gas estimates via simulation:
+
 ```json
 {
-  "preVerificationGas": "0x...",
-  "verificationGasLimit": "0x...",
-  "callGasLimit": "0x..."
+    "preVerificationGas": "0x...",
+    "verificationGasLimit": "0x...",
+    "callGasLimit": "0x..."
 }
 ```
 
@@ -248,6 +294,8 @@ ERC-4337 simulation (simulateValidation + simulateHandleOp)
   ↓
 Reputation check (sender banned?)
   ↓
+Profit check (effective gas price vs bundler cost)
+  ↓
 JSON file persistence
   ↓
 Mempool enqueue (FIFO + priority)
@@ -261,7 +309,7 @@ Return userOpHash to client
 
 ## Tech Stack
 
-- **Runtime**: Node.js + TypeScript
+- **Runtime**: Node.js >= 20.0.0 + TypeScript
 - **Blockchain**: viem (ethers-free)
 - **Smart Contracts**: Foundry + Solidity 0.8.28
 - **Storage**: JSON file-based persistence
