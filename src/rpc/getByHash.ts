@@ -16,6 +16,12 @@ export async function getUserOperationByHash(userOpHash: `0x${string}`): Promise
         return null;
     }
 
+    // Per ERC-7769: failed/dropped ops should return null (not found)
+    if (stored.status === "failed" || stored.status === "dropped") {
+        logger.debug(`UserOp ${userOpHash} status=${stored.status}, returning null`);
+        return null;
+    }
+
     let blockHash: `0x${string}` | undefined = stored.blockHash;
     let blockNumber: bigint | undefined = stored.blockNumber;
 

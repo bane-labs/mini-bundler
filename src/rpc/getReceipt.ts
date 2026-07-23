@@ -60,7 +60,7 @@ export async function getUserOperationReceipt(userOpHash: `0x${string}`): Promis
         logger.info(`Fetched receipt for ${userOpHash}: success=${userOpReceipt.success}`);
         return userOpReceipt;
     } catch (err: unknown) {
-        logger.error(`Failed to fetch receipt for ${userOpHash}: ${(err as Error).message ?? "unknown"}`);
+        logger.debug(`Receipt not yet available for ${userOpHash}: ${(err as Error).message ?? "unknown"}`);
         return null;
     }
 }

@@ -180,7 +180,7 @@ export class Bundler {
                 entry.storedOp.status = "failed";
                 entry.storedOp.updatedAt = Date.now();
                 storeUserOp(entry.storedOp);
-                mempool.markStatus(entry.storedOp.userOp.sender, entry.storedOp.userOp.nonce, "failed");
+                mempool.remove(entry.storedOp.userOp.sender, entry.storedOp.userOp.nonce);
                 metrics.incExecutionFailures();
             }
         }

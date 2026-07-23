@@ -411,10 +411,9 @@ async function main() {
         break;
       }
     } else {
-      if (lastStatus !== "not-found") {
-        console.log(`   [${((Date.now() - tPoll) / 1000).toFixed(1)}s] Not yet indexed`);
-        lastStatus = "not-found";
-      }
+      // null result = op failed/dropped per ERC-7769
+      console.error(`   [${((Date.now() - tPoll) / 1000).toFixed(1)}s] UserOp not found (failed or dropped)`);
+      process.exit(1);
     }
 
     await sleep(POLL_INTERVAL_MS);
