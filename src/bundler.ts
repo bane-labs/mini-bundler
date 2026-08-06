@@ -142,7 +142,7 @@ export class Bundler {
         logger.info(`Processing bundle ${bundle.id}: ${bundle.ops.length} ops, gas=${bundle.totalGas}`);
 
         try {
-            const txHash = await submitHandleOps(ops[0]);
+            const txHash = await submitHandleOps(ops);
 
             metrics.incBundlesSubmitted();
             metrics.incOpsSubmitted(bundle.ops.length);

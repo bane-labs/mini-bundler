@@ -14,17 +14,17 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 /**
- * Submit a single UserOperation to the EntryPoint via handleOps.
+ * Submit UserOperations to the EntryPoint via handleOps.
  *
  * Returns the transaction hash of the submitted bundle.
  */
-export async function handleOps(userOp: UserOperation): Promise<`0x${string}`> {
+export async function handleOps(ops: UserOperation[]): Promise<`0x${string}`> {
     const hash = await withTimeout(
         walletClient.writeContract({
             address: config.entryPoint,
             abi: entryPointAbi,
             functionName: "handleOps",
-            args: [[userOp], account.address],
+            args: [ops, account.address],
         }),
         HANDLE_OPS_TIMEOUT_MS,
         "handleOps",
