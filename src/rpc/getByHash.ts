@@ -40,8 +40,8 @@ export async function getUserOperationByHash(userOpHash: `0x${string}`): Promise
     return {
         userOp: stored.userOp,
         entryPoint: stored.entryPoint,
-        transactionHash: stored.txHash ?? ("0x" as `0x${string}`),
-        blockHash: blockHash ?? ("0x" as `0x${string}`),
-        blockNumber: blockNumber ?? 0n,
+        transactionHash: stored.txHash ?? null,
+        blockHash: blockHash ?? null,
+        blockNumber: blockNumber ?? null,
     };
 }

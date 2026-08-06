@@ -13,6 +13,7 @@ import {
 import { checkIpRateLimit, checkSenderRateLimit, validateUserOpSecurity } from "./security/index.js";
 import { metrics } from "./metrics/index.js";
 import { logger, childLogger } from "./logging/index.js";
+import { BundlerRpcError } from "./aaErrors.js";
 
 const bundler = new Bundler();
 
@@ -70,6 +71,14 @@ export async function rpcHandler(req: Request, res: Response) {
             // ========================
             // EIP-4337 Standard Methods
             // ========================
+
+            // ========================
+            // EIP-4337 Standard Methods
+            // ========================
+
+            case "eth_chainId": {
+                return rpcResult(res, id, "0x" + config.chain.id.toString(16));
+            }
 
             case "eth_supportedEntryPoints": {
                 return rpcResult(res, id, getSupportedEntryPoints());
@@ -186,9 +195,18 @@ export async function rpcHandler(req: Request, res: Response) {
                 return rpcError(res, id, -32601, `Method not found: ${method}`);
         }
     } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        const code = err instanceof BundlerRpcError ? err.code : -32000;
         metrics.incExecutionFailures();
-        logger.error(`RPC error [${method}]: ${err instanceof Error ? err.message : "Unknown error"}`, { method });
+        logger.error(`RPC error [${method}]: ${message}`, { method });
 
-        return rpcError(res, id, -32000, err instanceof Error ? err.message : "Unknown error");
+        if (err instanceof BundlerRpcError && err.data !== undefined) {
+            return res.json({
+                jsonrpc: "2.0",
+                id,
+                error: { code, message, data: err.data },
+            });
+        }
+        return rpcError(res, id, code, message);
     }
 }

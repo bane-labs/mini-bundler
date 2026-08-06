@@ -73,6 +73,7 @@ export interface PendingUserOp {
 /** Full receipt from eth_getUserOperationReceipt. */
 export interface UserOperationReceipt {
     userOpHash: `0x${string}`;
+    entryPoint: Address;
     sender: Address;
     nonce: bigint;
     transactionHash: `0x${string}`;
@@ -83,8 +84,10 @@ export interface UserOperationReceipt {
     actualGasCost: bigint;
     actualGasUsed: bigint;
     success: boolean;
+    reason?: string;
     paymaster?: Address;
     logs: LogEntry[];
+    receipt?: unknown;
 }
 
 /** Individual log entry within a transaction receipt. */
@@ -101,9 +104,9 @@ export interface LogEntry {
 export interface UserOperationByHash {
     userOp: UserOperation;
     entryPoint: Address;
-    transactionHash: `0x${string}`;
-    blockHash: `0x${string}`;
-    blockNumber: bigint;
+    transactionHash: `0x${string}` | null;
+    blockHash: `0x${string}` | null;
+    blockNumber: bigint | null;
 }
 
 /** Lifecycle status of a UserOperation. */

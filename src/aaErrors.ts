@@ -1,3 +1,16 @@
+/** JSON-RPC error raised from bundler logic with a spec-compliant code. */
+export class BundlerRpcError extends Error {
+    code: number;
+    data?: unknown;
+
+    constructor(code: number, message: string, data?: unknown) {
+        super(message);
+        this.name = "BundlerRpcError";
+        this.code = code;
+        this.data = data;
+    }
+}
+
 import { decodeErrorResult, decodeAbiParameters, type Hex } from "viem";
 import { decodeErrorReason } from "@account-abstraction/utils";
 import { entryPointAbi } from "./abi.js";

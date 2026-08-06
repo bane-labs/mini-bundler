@@ -33,6 +33,7 @@ export async function getUserOperationReceipt(userOpHash: `0x${string}`): Promis
 
         const userOpReceipt: UserOperationReceipt = {
             userOpHash,
+            entryPoint: stored.entryPoint,
             sender: stored.userOp.sender,
             nonce: stored.userOp.nonce,
             transactionHash: stored.txHash,
@@ -43,6 +44,7 @@ export async function getUserOperationReceipt(userOpHash: `0x${string}`): Promis
             actualGasCost: receipt.gasUsed * (receipt.effectiveGasPrice ?? 0n),
             actualGasUsed: receipt.gasUsed,
             success: receipt.status === "success",
+            reason: receipt.status !== "success" ? "reverted on-chain" : undefined,
             paymaster:
                 stored.userOp.paymasterAndData !== "0x"
                     ? (stored.userOp.paymasterAndData.slice(0, 42) as Address)
@@ -55,6 +57,21 @@ export async function getUserOperationReceipt(userOpHash: `0x${string}`): Promis
                 transactionHash: log.transactionHash,
                 logIndex: log.logIndex,
             })),
+            receipt: {
+                transactionHash: receipt.transactionHash,
+                transactionIndex: receipt.transactionIndex,
+                blockHash: receipt.blockHash,
+                blockNumber: receipt.blockNumber,
+                from: receipt.from,
+                to: receipt.to,
+                cumulativeGasUsed: receipt.cumulativeGasUsed,
+                gasUsed: receipt.gasUsed,
+                effectiveGasPrice: receipt.effectiveGasPrice,
+                contractAddress: receipt.contractAddress,
+                logs: receipt.logs,
+                logsBloom: receipt.logsBloom,
+                status: receipt.status,
+            },
         };
 
         logger.info(`Fetched receipt for ${userOpHash}: success=${userOpReceipt.success}`);

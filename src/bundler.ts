@@ -5,6 +5,7 @@ import { entryPointAbi } from "./abi.js";
 import type { UserOperation, StoredUserOp, PendingUserOp } from "./types.js";
 import { simulateHandleOp } from "./simulateHandleOp.js";
 import { simulateValidation } from "./simulateValidation.js";
+import { BundlerRpcError } from "./aaErrors.js";
 import { Mempool } from "./mempool/index.js";
 import { Scheduler } from "./scheduler/index.js";
 import { buildBundle } from "./bundle/index.js";
@@ -81,7 +82,7 @@ export class Bundler {
         if (!validation.success) {
             recordValidationFailure(userOp.sender, "sender");
             metrics.incValidationFailures();
-            throw new Error(`Validation failed: ${validation.reason ?? "unknown"}`);
+            throw new BundlerRpcError(-32500, validation.reason ?? "rejected by EntryPoint simulateValidation");
         }
 
         if (validation.aggregated) {
@@ -97,7 +98,7 @@ export class Bundler {
             const errorDetail = execution.targetError
                 ? ` [${execution.targetError.errorName}: ${execution.targetError.message}]`
                 : "";
-            throw new Error(`Execution failed: ${execution.reason ?? "unknown"}${errorDetail}`);
+            throw new BundlerRpcError(-32500, `Execution failed: ${execution.reason ?? "unknown"}${errorDetail}`);
         }
 
         const profitCheck = await checkProfit(userOp, {

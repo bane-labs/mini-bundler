@@ -28,6 +28,7 @@ function extractRevertData(error: unknown): Hex | undefined {
 export async function estimateUserOperationGas(userOp: UserOperation): Promise<{
     preVerificationGas: `0x${string}`;
     verificationGasLimit: `0x${string}`;
+    paymasterVerificationGasLimit?: `0x${string}`;
     callGasLimit: `0x${string}`;
 }> {
     const start = Date.now();
@@ -119,9 +120,12 @@ export async function estimateUserOperationGas(userOp: UserOperation): Promise<{
         `Gas estimate: verification=${verificationGasLimit}, call=${callGasLimit}, preVerify=${preVerificationGas} (${elapsed}ms)`,
     );
 
+    const hasPaymaster = userOp.paymasterAndData !== "0x";
+
     return {
         preVerificationGas: ("0x" + preVerificationGas.toString(16)) as `0x${string}`,
         verificationGasLimit: ("0x" + verificationGasLimit.toString(16)) as `0x${string}`,
+        ...(hasPaymaster ? { paymasterVerificationGasLimit: ("0x" + verificationGasLimit.toString(16)) as `0x${string}` } : {}),
         callGasLimit: ("0x" + callGasLimit.toString(16)) as `0x${string}`,
     };
 }
