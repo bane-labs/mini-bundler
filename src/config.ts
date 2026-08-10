@@ -6,7 +6,8 @@
  */
 
 import dotenv from "dotenv";
-import { defineChain } from "viem";
+import { defineChain, createPublicClient, http } from "viem";
+import { logger } from "./logging/index.js";
 
 dotenv.config();
 
@@ -29,32 +30,54 @@ const rpcUrl = requireEnv("RPC_URL");
 const privateKey = requireEnv("PRIVATE_KEY") as `0x${string}`;
 const entryPoint = validateAddress("ENTRYPOINT", requireEnv("ENTRYPOINT"));
 
+// Chain identity is discovered from the configured RPC node at startup.
+// Fields are mutated by initChainConfig() so eth_chainId reflects the real network.
+const chainConfig = defineChain({
+    id: Number(process.env.CHAIN_ID ?? 2312251829),
+    name: process.env.CHAIN_NAME ?? "NeoX TestNet",
+    nativeCurrency: {
+        name: "NeoX Gas Token",
+        symbol: "GAS",
+        decimals: 18,
+    },
+    rpcUrls: {
+        default: { http: [rpcUrl] },
+        public: { http: [rpcUrl] },
+    },
+    blockExplorers: {
+        default: {
+            name: "NeoX Explorer",
+            url: "https://neoxscan.rolless.xyz",
+        },
+    },
+});
+
 /** Core bundler configuration. */
 export const config = {
     port: Number(process.env.PORT ?? 3000),
     rpcUrl,
     privateKey,
     entryPoint,
-    chain: defineChain({
-        id: 2312251829,
-        name: "NeoX TestNet",
-        nativeCurrency: {
-            name: "NeoX Gas Token",
-            symbol: "GAS",
-            decimals: 18,
-        },
-        rpcUrls: {
-            default: { http: [rpcUrl] },
-            public: { http: [rpcUrl] },
-        },
-        blockExplorers: {
-            default: {
-                name: "NeoX Explorer",
-                url: "https://neoxscan.rolless.xyz",
-            },
-        },
-    }),
+    chain: chainConfig,
 };
+
+/**
+ * Query the configured RPC node for its actual EIP-155 chain id and update
+ * config.chain in place, so eth_chainId reflects the live network instead of
+ * a hardcoded default. Called once at server startup.
+ */
+export async function initChainConfig(): Promise<number> {
+    const client = createPublicClient({ chain: chainConfig, transport: http(rpcUrl) });
+    try {
+        const id = Number(await client.getChainId());
+        chainConfig.id = id;
+        logger.info(`Chain configured from RPC: id=${id}`);
+        return id;
+    } catch (err: unknown) {
+        logger.error(`Failed to fetch chain id from RPC: ${err instanceof Error ? err.message : "unknown"}`);
+        return chainConfig.id;
+    }
+}
 
 /** Mempool configuration — controls pending queue behavior. */
 export const mempoolConfig = {

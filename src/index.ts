@@ -1,6 +1,6 @@
 import express from "express";
 
-import { config, mempoolConfig, rateLimitConfig } from "./config.js";
+import { config, initChainConfig, mempoolConfig, rateLimitConfig } from "./config.js";
 import { rpcHandler } from "./rpc.js";
 import { Bundler } from "./bundler.js";
 import { renderMetrics } from "./metrics/index.js";
@@ -30,28 +30,38 @@ app.get("/metrics", (_req, res) => {
 
 app.post("/", rpcHandler);
 
-const server = app.listen(config.port, () => {
-    logger.info(`Mini Bundler listening on ${config.port}`);
-    logger.info(`EntryPoint: ${config.entryPoint}`);
-    logger.info(`Chain: ${config.chain.name} (${config.chain.id})`);
+async function start() {
+    await initChainConfig();
 
-    bundler.startScheduler();
-});
+    const server = app.listen(config.port, () => {
+        logger.info(`Mini Bundler listening on ${config.port}`);
+        logger.info(`EntryPoint: ${config.entryPoint}`);
+        logger.info(`Chain: ${config.chain.name} (${config.chain.id})`);
 
-// Cleanup rate limit buckets periodically
-const cleanupInterval = setInterval(cleanupRateBuckets, 120_000);
-
-function shutdown(signal: string) {
-    logger.info(`${signal} received — shutting down...`);
-    bundler.stopScheduler();
-    clearInterval(cleanupInterval);
-    server.close(() => {
-        closeDb();
-        logger.info("Server closed.");
-        process.exit(0);
+        bundler.startScheduler();
     });
-    setTimeout(() => process.exit(1), 5000);
+
+    // Cleanup rate limit buckets periodically
+    const cleanupInterval = setInterval(cleanupRateBuckets, 120_000);
+
+    function shutdown(signal: string) {
+        logger.info(`${signal} received — shutting down...`);
+        bundler.stopScheduler();
+        clearInterval(cleanupInterval);
+        server.close(() => {
+            closeDb();
+            logger.info("Server closed.");
+            process.exit(0);
+        });
+        setTimeout(() => process.exit(1), 5000);
+    }
+
+    process.on("SIGINT", () => shutdown("SIGINT"));
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
 }
 
-process.on("SIGINT", () => shutdown("SIGINT"));
-process.on("SIGTERM", () => shutdown("SIGTERM"));
+start().catch((err: unknown) => {
+    logger.error(`Fatal startup error: ${err instanceof Error ? err.message : "unknown"}`);
+    process.exit(1);
+});
+
