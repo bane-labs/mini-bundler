@@ -47,7 +47,7 @@ const chainConfig = defineChain({
     blockExplorers: {
         default: {
             name: "NeoX Explorer",
-            url: "https://neoxscan.rolless.xyz",
+            url: process.env.BLOCK_EXPLORER_URL ?? "https://neoxt4scan.ngd.network",
         },
     },
 });
