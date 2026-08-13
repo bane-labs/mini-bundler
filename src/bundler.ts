@@ -116,8 +116,6 @@ export class Bundler {
 
         await estimateGasFees();
 
-        storeUserOp(storedOp);
-
         const entry: MempoolEntry = {
             storedOp,
             priority: 0,
@@ -127,6 +125,8 @@ export class Bundler {
         if (!result.accepted) {
             throw new Error(`Mempool rejected: ${result.reason}`);
         }
+
+        storeUserOp(storedOp);
 
         metrics.incPendingOps();
         metrics.setPendingCount(mempool.size);
