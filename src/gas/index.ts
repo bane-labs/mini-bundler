@@ -12,7 +12,7 @@ import { BASE_FEE_CACHE_TTL_MS, FALLBACK_BASE_FEE } from "../constants.js";
 
 const DEFAULT_GAS_CONFIG: GasConfig = {
     maxFeePerGasCap: BigInt("50000000000"), // 50 gwei
-    maxPriorityFeePerGasCap: BigInt("3000000000"), // 3 gwei
+    maxPriorityFeePerGasCap: BigInt("30000000000"), // 30 gwei (NeoX RPC needs ~20 gwei tip)
     gasBumpPercent: 20,
     replacementThresholdMs: 30_000,
     pendingTxTimeoutMs: 120_000,
@@ -58,7 +58,9 @@ export async function estimateGasFees(overrides?: Partial<GasConfig>): Promise<G
     const cfg = { ...DEFAULT_GAS_CONFIG, ...overrides };
     const baseFee = await getLatestBaseFee();
 
-    const suggestedPriority = baseFee / 10n;
+    // NeoX RPC enforces minGasTipCap ~ baseFee (20 gwei). Use the base fee as
+    // the priority tip (rather than baseFee/10) so transactions clear the gate.
+    const suggestedPriority = baseFee;
     const maxPriorityFeePerGas =
         suggestedPriority > cfg.maxPriorityFeePerGasCap ? cfg.maxPriorityFeePerGasCap : suggestedPriority;
 

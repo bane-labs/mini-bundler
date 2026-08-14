@@ -3,6 +3,8 @@ import { publicClient } from "./clients.js";
 import { config, bundleConfig, profitConfig } from "./config.js";
 import { entryPointAbi } from "./abi.js";
 import type { UserOperation, StoredUserOp, PendingUserOp } from "./types.js";
+import { encodeFunctionData, type Hex } from "viem";
+import { callEth, type AccountOverride } from "./callEth.js";
 import { simulateHandleOp } from "./simulateHandleOp.js";
 import { simulateValidation } from "./simulateValidation.js";
 import { BundlerRpcError } from "./aaErrors.js";
@@ -31,12 +33,23 @@ function dedupKey(userOp: UserOperation): string {
 }
 
 async function getUserOpHash(userOp: UserOperation): Promise<`0x${string}`> {
-    return (await publicClient.readContract({
-        address: config.entryPoint,
+    // EIP-7702: the EntryPoint derives the authoritative userOpHash by reading
+    // the sender's on-chain code (the 0xef0100 delegation designator). A fresh
+    // EOA sender has no code yet, so we must inject the delegation designator
+    // via stateOverride for 7702 ops, otherwise getUserOpHash reverts.
+    const auth = userOp.eip7702Auth;
+    const overrides: Record<string, AccountOverride> = {};
+    if (auth) {
+        overrides[userOp.sender.toLowerCase()] = {
+            code: `0xef0100${auth.address.slice(2)}` as Hex,
+        };
+    }
+    const data = encodeFunctionData({
         abi: entryPointAbi,
         functionName: "getUserOpHash",
         args: [userOp],
-    })) as `0x${string}`;
+    });
+    return (await callEth(config.entryPoint, data, overrides)) as `0x${string}`;
 }
 
 export class Bundler {

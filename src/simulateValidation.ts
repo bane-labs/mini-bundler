@@ -1,6 +1,6 @@
 import { encodeFunctionData, decodeFunctionResult, type Hex } from "viem";
+import { callEth, type AccountOverride } from "./callEth.js";
 
-import { publicClient } from "./clients.js";
 import { config } from "./config.js";
 import { entryPointSimulationsAbi, EntryPointSimulationsCode } from "./abi.js";
 import type { UserOperation } from "./types.js";
@@ -30,28 +30,31 @@ export async function simulateValidation(userOp: UserOperation): Promise<Validat
         args: [userOp],
     });
 
+    const auth = userOp.eip7702Auth;
+    const overrides: Record<string, AccountOverride> = {
+        [config.entryPoint.toLowerCase()]: { code: EntryPointSimulationsCode },
+    };
+    if (auth) {
+        overrides[userOp.sender.toLowerCase()] = {
+            // Delegation designator (0xef0100 + implementation). eth_call does
+            // not execute tx-level authorizations, so we simulate the EOA as
+            // already upgraded. Inject balance so it can cover the prefund.
+            code: `0xef0100${auth.address.slice(2)}` as Hex,
+            balance: 10n * 10n ** 18n,
+        };
+    }
     try {
-        const result = await publicClient.call({
-            to: config.entryPoint,
-            data,
-            stateOverride: [
-                {
-                    address: config.entryPoint,
-                    code: EntryPointSimulationsCode,
-                },
-            ],
-        });
-
+        const result = await callEth(config.entryPoint, data, overrides);
         // A successful (non-reverting) call still carries the account's
         // validation data. Decode it and reject signature-failed results.
-        if (!result.data || result.data === "0x") {
+        if (!result || result === "0x") {
             return { success: false, reason: "simulateValidation returned no data" };
         }
 
         const decoded = decodeFunctionResult({
             abi: entryPointSimulationsAbi,
             functionName: "simulateValidation",
-            data: result.data as Hex,
+            data: result as Hex,
         }) as unknown as {
             returnInfo?: {
                 accountValidationData?: bigint;

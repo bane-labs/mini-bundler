@@ -1,6 +1,6 @@
 import { encodeFunctionData, decodeFunctionResult, type Hex } from "viem";
+import { callEth, type AccountOverride } from "./callEth.js";
 
-import { publicClient } from "./clients.js";
 import { config } from "./config.js";
 import { entryPointSimulationsAbi, EntryPointSimulationsCode } from "./abi.js";
 import type { UserOperation } from "./types.js";
@@ -18,26 +18,29 @@ export async function simulateHandleOp(userOp: UserOperation): Promise<Execution
         args: [userOp, config.entryPoint, "0x"],
     });
 
+    const auth = userOp.eip7702Auth;
+    const overrides: Record<string, AccountOverride> = {
+        [config.entryPoint.toLowerCase()]: { code: EntryPointSimulationsCode },
+    };
+    if (auth) {
+        overrides[userOp.sender.toLowerCase()] = {
+            // Delegation designator (0xef0100 + implementation). eth_call does
+            // not execute tx-level authorizations, so we simulate the EOA as
+            // already upgraded. Inject balance so it can cover prefund.
+            code: `0xef0100${auth.address.slice(2)}` as Hex,
+            balance: 10n * 10n ** 18n,
+        };
+    }
     try {
-        const result = await publicClient.call({
-            to: config.entryPoint,
-            data,
-            stateOverride: [
-                {
-                    address: config.entryPoint,
-                    code: EntryPointSimulationsCode,
-                },
-            ],
-        });
-
-        if (!result.data || result.data === "0x") {
+        const result = await callEth(config.entryPoint, data, overrides);
+        if (!result || result === "0x") {
             return { success: true };
         }
 
         const decoded = decodeFunctionResult({
             abi: entryPointSimulationsAbi,
             functionName: "simulateHandleOp",
-            data: result.data,
+            data: result as Hex,
         }) as unknown as {
             preOpGas: bigint;
             paid: bigint;
@@ -46,15 +49,22 @@ export async function simulateHandleOp(userOp: UserOperation): Promise<Execution
             targetSuccess: boolean;
             targetResult: `0x${string}`;
         };
-
-        const execResult = Array.isArray(decoded) ? decoded[0] : decoded;
-
-        const preOpGas = execResult.preOpGas ?? 0n;
-        const paid = execResult.paid ?? 0n;
-        const accountValidationData = execResult.accountValidationData ?? 0n;
-        const paymasterValidationData = execResult.paymasterValidationData ?? 0n;
-        const targetSuccess = execResult.targetSuccess ?? true;
-        const targetResult = execResult.targetResult ?? "0x";
+        const decArr = Array.isArray(decoded) ? decoded : [decoded];
+        const d0 = decArr[0] ?? {};
+        const execResult = {
+            preOpGas: d0.preOpGas ?? 0n,
+            paid: d0.paid ?? 0n,
+            accountValidationData: d0.accountValidationData ?? 0n,
+            paymasterValidationData: d0.paymasterValidationData ?? 0n,
+            targetSuccess: d0.targetSuccess ?? true,
+            targetResult: d0.targetResult ?? "0x",
+        };
+        const preOpGas = execResult.preOpGas;
+        const paid = execResult.paid;
+        const accountValidationData = execResult.accountValidationData;
+        const paymasterValidationData = execResult.paymasterValidationData;
+        const targetSuccess = execResult.targetSuccess;
+        const targetResult = execResult.targetResult;
 
         if (targetSuccess) {
             return {
@@ -82,13 +92,12 @@ export async function simulateHandleOp(userOp: UserOperation): Promise<Execution
         }
 
         try {
-            const decoded = decodeCallRevert(error);
-
+            const decodedErr = decodeCallRevert(error);
             return {
                 success: false,
-                reason: decoded.reason,
-                decodedError: decoded.decodedError,
-                rawRevertData: decoded.rawRevertData,
+                reason: decodedErr.reason,
+                decodedError: decodedErr.decodedError,
+                rawRevertData: decodedErr.rawRevertData,
             };
         } catch {
             return {

@@ -9,6 +9,30 @@ import { type Hex, type Address } from "viem";
 export type { Hex, Address };
 
 /** ERC-4337 v0.8 UserOperation with bigint fields. */
+/**
+ * EIP-7702 authorization (authorizationList entry).
+ *
+ * An EOA signs {address, chainId, nonce} to authorize setting its code to a
+ * delegation designator (0xef0100 + implementation address). The bundler
+ * attaches these to the handleOps transaction so a fresh sender is upgraded
+ * to a smart account in the same transaction that executes its first UserOp.
+ */
+export interface Eip7702Authorization {
+    /** Implementation contract the EOA delegates to. */
+    address: Address;
+    /** Chain id the authorization is valid for (must match bundler chain). */
+    chainId: bigint;
+    /** The EOA's own nonce at signing time (NOT the bundler tx nonce). */
+    nonce: bigint;
+    /** Signature parity (0n or 1n). */
+    yParity: bigint;
+    /** Signature r (32 bytes). */
+    r: Hex;
+    /** Signature s (32 bytes). */
+    s: Hex;
+}
+
+/** ERC-4337 v0.8 UserOperation with bigint fields. */
 export interface UserOperation {
     sender: Address;
     nonce: bigint;
@@ -19,6 +43,8 @@ export interface UserOperation {
     gasFees: Hex;
     paymasterAndData: Hex;
     signature: Hex;
+    /** EIP-7702 authorization (ERC-7769) to attach to the handleOps tx. */
+    eip7702Auth?: Eip7702Authorization;
 }
 
 /** Raw UserOperation as received from JSON-RPC (all fields as strings/hex). */
@@ -32,6 +58,8 @@ export interface RawUserOperation {
     gasFees?: unknown;
     paymasterAndData?: unknown;
     signature?: unknown;
+    /** EIP-7702 authorization (ERC-7769), optional. */
+    eip7702Auth?: unknown;
 }
 
 /** JSON-RPC 2.0 request envelope. */
