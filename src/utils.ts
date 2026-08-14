@@ -104,6 +104,32 @@ export function validateUserOperation(raw: RawUserOperation): ValidationError[] 
         });
     }
 
+    // eip7702Auth — optional EIP-7702 authorization object
+    if (raw.eip7702Auth !== undefined) {
+        const auth = raw.eip7702Auth as Record<string, unknown>;
+        if (!auth || typeof auth !== "object") {
+            errors.push({ field: "eip7702Auth", message: "Must be an object" });
+        } else {
+            if (!isAddress(auth.address)) {
+                errors.push({ field: "eip7702Auth.address", message: `Invalid address: ${JSON.stringify(auth.address)}` });
+            }
+            if (!isValidNonce(auth.chainId)) {
+                errors.push({ field: "eip7702Auth.chainId", message: `Invalid chainId: ${JSON.stringify(auth.chainId)}` });
+            }
+            if (!isValidNonce(auth.nonce)) {
+                errors.push({ field: "eip7702Auth.nonce", message: `Invalid nonce: ${JSON.stringify(auth.nonce)}` });
+            }
+            if (auth.yParity !== undefined && !isValidNonce(auth.yParity)) {
+                errors.push({ field: "eip7702Auth.yParity", message: `Invalid yParity: ${JSON.stringify(auth.yParity)}` });
+            }
+            if (!isHexString(auth.r, 32)) {
+                errors.push({ field: "eip7702Auth.r", message: "Must be 0x + 64 hex chars (32 bytes)" });
+            }
+            if (!isHexString(auth.s, 32)) {
+                errors.push({ field: "eip7702Auth.s", message: "Must be 0x + 64 hex chars (32 bytes)" });
+            }
+        }
+    }
     return errors;
 }
 
@@ -125,5 +151,24 @@ export function parseUserOperation(raw: RawUserOperation): UserOperation {
         gasFees: raw.gasFees as `0x${string}`,
         paymasterAndData: raw.paymasterAndData as `0x${string}`,
         signature: raw.signature as `0x${string}`,
+        ...(raw.eip7702Auth !== undefined && raw.eip7702Auth !== null
+            ? { eip7702Auth: parseEip7702Authorization(raw.eip7702Auth) }
+            : {}),
+    };
+}
+
+/**
+ * Convert a raw EIP-7702 authorization (JSON-RPC form) to the typed form.
+ */
+function parseEip7702Authorization(raw: unknown): import("./types.js").Eip7702Authorization {
+    const auth = raw as Record<string, unknown>;
+    const toBigInt = (v: unknown): bigint => (typeof v === "bigint" ? v : BigInt(v as string));
+    return {
+        address: auth.address as `0x${string}`,
+        chainId: toBigInt(auth.chainId),
+        nonce: toBigInt(auth.nonce),
+        yParity: toBigInt(auth.yParity ?? 0n),
+        r: auth.r as `0x${string}`,
+        s: auth.s as `0x${string}`,
     };
 }
