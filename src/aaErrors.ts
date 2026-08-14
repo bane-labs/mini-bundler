@@ -69,25 +69,28 @@ export function decodeRevertData(data: Hex): DecodedError | undefined {
 
         switch (decoded.errorName) {
             case "FailedOp": {
-                const args = decoded.args as unknown as { opIndex: bigint; reason: string };
-                return { message: `FailedOp: ${args.reason}`, errorName: "FailedOp", opIndex: Number(args.opIndex) };
+                // decodeErrorResult returns args as a positional array: [opIndex, reason]
+                const [opIndex, reason] = decoded.args as [bigint, string];
+                return { message: `FailedOp: ${reason}`, errorName: "FailedOp", opIndex: Number(opIndex) };
             }
             case "FailedOpWithRevert": {
-                const args = decoded.args as unknown as { opIndex: bigint; reason: string; inner: Hex };
+                // positional: [opIndex, reason, inner]
+                const [opIndex2, reason2, inner] = decoded.args as [bigint, string, Hex];
                 return {
-                    message: `FailedOpWithRevert: ${args.reason}`,
+                    message: `FailedOpWithRevert: ${reason2}`,
                     errorName: "FailedOpWithRevert",
-                    opIndex: Number(args.opIndex),
-                    innerData: args.inner,
+                    opIndex: Number(opIndex2),
+                    innerData: inner,
                 };
             }
             case "PostOpReverted": {
-                const args = decoded.args as unknown as { returnData: Hex };
-                const innerError = decodeRevertData(args.returnData);
+                // positional: [returnData]
+                const [returnData] = decoded.args as [Hex];
+                const innerError = decodeRevertData(returnData);
                 return {
                     message: `PostOpReverted: ${innerError?.message ?? "unknown"}`,
                     errorName: "PostOpReverted",
-                    innerData: args.returnData,
+                    innerData: returnData,
                 };
             }
             default:
