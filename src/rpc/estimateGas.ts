@@ -1,28 +1,39 @@
-/**
- * eth_estimateUserOperationGas — real gas estimation via simulation.
- *
- * Uses simulateValidation + simulateHandleOp to estimate actual gas.
- * Returns preVerificationGas, verificationGasLimit, callGasLimit.
- */
+import { encodeFunctionData, type Hex } from "viem";
 
-import { encodeFunctionData, decodeFunctionResult, type Hex } from "viem";
-import { publicClient } from "../clients.js";
+import { publicClient, account } from "../clients.js";
 import { config } from "../config.js";
-import { entryPointSimulationsAbi, EntryPointSimulationsCode, entryPointAbi } from "../abi.js";
+import { entryPointSimulationsAbi, EntryPointSimulationsCode } from "../abi.js";
 import type { UserOperation } from "../types.js";
 import { metrics } from "../metrics/index.js";
 import { logger } from "../logging/index.js";
 
-function extractRevertData(error: unknown): Hex | undefined {
-    let e = error as Record<string, unknown> | undefined;
-    for (let i = 0; i < 10 && e; i++) {
-        const data = e.data;
-        if (typeof data === "string" && data.startsWith("0x")) return data as Hex;
-        if (typeof (data as Record<string, unknown>)?.data === "string")
-            return (data as Record<string, unknown>).data as Hex;
-        e = e.cause as Record<string, unknown> | undefined;
-    }
-    return undefined;
+/**
+ * eth_estimateUserOperationGas — real gas estimation via EntryPoint simulation.
+ *
+ * Runs simulateValidation and simulateHandleOp (with the simulations bytecode
+ * state override) and measures the actual gas consumed, instead of returning
+ * hardcoded defaults. A safety buffer is added on top so the returned limits
+ * comfortably cover the real execution.
+ */
+const GAS_BUFFER_PERCENT = 10n;
+const BUFFER_DENOM = 100n;
+const MIN_VERIFICATION_GAS = 100_000n;
+const MIN_CALL_GAS = 100_000n;
+
+/** Estimate gas for a low-level call and return the measured gas used. */
+async function estimateSimulationGas(data: Hex): Promise<bigint> {
+    // stateOverride injects the EntryPointSimulations code into the EntryPoint address.
+    return publicClient.estimateGas({
+        account: account.address,
+        to: config.entryPoint,
+        data,
+        stateOverride: [
+            {
+                address: config.entryPoint,
+                code: EntryPointSimulationsCode,
+            },
+        ],
+    });
 }
 
 export async function estimateUserOperationGas(userOp: UserOperation): Promise<{
@@ -33,7 +44,7 @@ export async function estimateUserOperationGas(userOp: UserOperation): Promise<{
 }> {
     const start = Date.now();
 
-    // 1. simulateValidation — get verification gas info
+    // 1. simulateValidation — measures the account/paymaster validation gas.
     const validationData = encodeFunctionData({
         abi: entryPointSimulationsAbi,
         functionName: "simulateValidation",
@@ -41,38 +52,19 @@ export async function estimateUserOperationGas(userOp: UserOperation): Promise<{
     });
 
     let verificationGasLimit = 300_000n;
+    let validationGasUsed = 0n;
 
     try {
-        await publicClient.call({
-            to: config.entryPoint,
-            data: validationData,
-            stateOverride: [
-                {
-                    address: config.entryPoint,
-                    code: EntryPointSimulationsCode,
-                },
-            ],
-        });
+        validationGasUsed = await estimateSimulationGas(validationData);
     } catch (error: unknown) {
-        const revertData = extractRevertData(error);
-        if (revertData) {
-            try {
-                const decoded = decodeFunctionResult({
-                    abi: entryPointSimulationsAbi,
-                    functionName: "simulateValidation",
-                    data: revertData,
-                }) as unknown as { result?: unknown };
-                const validationResult = decoded.result as unknown[] | undefined;
-                if (validationResult) {
-                    verificationGasLimit = BigInt((validationResult[1] as bigint) ?? 300_000);
-                }
-            } catch {
-                // simulation reverted with unknown data, use default
-            }
-        }
+        logger.warn(`Gas estimate: simulateValidation failed: ${error instanceof Error ? error.message : "unknown"}`);
     }
 
-    // 2. simulateHandleOp — get call gas info
+    if (validationGasUsed > 0n) {
+        verificationGasLimit = (validationGasUsed * (BUFFER_DENOM + GAS_BUFFER_PERCENT)) / BUFFER_DENOM;
+    }
+
+    // 2. simulateHandleOp — measures validation + execution together.
     const handleOpData = encodeFunctionData({
         abi: entryPointSimulationsAbi,
         functionName: "simulateHandleOp",
@@ -80,44 +72,31 @@ export async function estimateUserOperationGas(userOp: UserOperation): Promise<{
     });
 
     let callGasLimit = 500_000n;
+    let handleOpGasUsed = 0n;
 
     try {
-        await publicClient.call({
-            to: config.entryPoint,
-            data: handleOpData,
-            stateOverride: [
-                {
-                    address: config.entryPoint,
-                    code: EntryPointSimulationsCode,
-                },
-            ],
-        });
+        handleOpGasUsed = await estimateSimulationGas(handleOpData);
     } catch (error: unknown) {
-        const revertData = extractRevertData(error);
-        if (revertData) {
-            try {
-                const decoded = decodeFunctionResult({
-                    abi: entryPointSimulationsAbi,
-                    functionName: "simulateHandleOp",
-                    data: revertData,
-                }) as unknown as { result?: unknown };
-                const executionResult = decoded.result as unknown[] | undefined;
-                if (executionResult) {
-                    callGasLimit = BigInt((executionResult[0] as bigint) ?? 500_000);
-                }
-            } catch {
-                // use defaults
-            }
-        }
+        logger.warn(`Gas estimate: simulateHandleOp failed: ${error instanceof Error ? error.message : "unknown"}`);
     }
 
-    // 3. preVerificationGas — estimate calldata cost + overhead
+    if (handleOpGasUsed > 0n) {
+        // The call (execution) gas is the handleOp gas minus the validation gas.
+        const callGasUsed = handleOpGasUsed > validationGasUsed ? handleOpGasUsed - validationGasUsed : 0n;
+        callGasLimit = (callGasUsed * (BUFFER_DENOM + GAS_BUFFER_PERCENT)) / BUFFER_DENOM;
+    }
+
+    // Enforce safe minimums so a tiny estimate can never starve the bundle.
+    if (verificationGasLimit < MIN_VERIFICATION_GAS) verificationGasLimit = MIN_VERIFICATION_GAS;
+    if (callGasLimit < MIN_CALL_GAS) callGasLimit = MIN_CALL_GAS;
+
+    // 3. preVerificationGas — estimate calldata cost + overhead.
     const preVerificationGas = estimatePreVerificationGas(userOp);
 
     const elapsed = Date.now() - start;
     metrics.recordSimulationLatency(elapsed);
     logger.info(
-        `Gas estimate: verification=${verificationGasLimit}, call=${callGasLimit}, preVerify=${preVerificationGas} (${elapsed}ms)`,
+        `Gas estimate: verification=${verificationGasLimit} (valUsed=${validationGasUsed}), call=${callGasLimit} (handleUsed=${handleOpGasUsed}), preVerify=${preVerificationGas} (${elapsed}ms)`,
     );
 
     const hasPaymaster = userOp.paymasterAndData !== "0x";
@@ -125,15 +104,14 @@ export async function estimateUserOperationGas(userOp: UserOperation): Promise<{
     return {
         preVerificationGas: ("0x" + preVerificationGas.toString(16)) as `0x${string}`,
         verificationGasLimit: ("0x" + verificationGasLimit.toString(16)) as `0x${string}`,
-        ...(hasPaymaster ? { paymasterVerificationGasLimit: ("0x" + verificationGasLimit.toString(16)) as `0x${string}` } : {}),
+        ...(hasPaymaster
+            ? { paymasterVerificationGasLimit: ("0x" + verificationGasLimit.toString(16)) as `0x${string}` }
+            : {}),
         callGasLimit: ("0x" + callGasLimit.toString(16)) as `0x${string}`,
     };
 }
 
 function estimatePreVerificationGas(userOp: UserOperation): bigint {
-    const zeroGas = 4n;
-    const perWordGas = 16n;
-
     const callDataCost = calcCalldataCost(userOp.callData);
     const initCodeCost = calcCalldataCost(userOp.initCode);
     const paymasterCost = calcCalldataCost(userOp.paymasterAndData);
