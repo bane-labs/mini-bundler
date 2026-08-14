@@ -1,8 +1,8 @@
 # Mini Bundler
 
-A production-grade ERC-4337 bundler for NeoX TestNet, built with TypeScript + viem + Foundry.
+A production-grade ERC-4337 bundler for NeoX, built with TypeScript + viem + Foundry.
 
-Implements the full ERC-4337 lifecycle: receive, validate, simulate, bundle, submit, and track `UserOperation` transactions on NeoX TestNet.
+Implements the full ERC-4337 lifecycle: receive, validate, simulate, bundle, submit, and track `UserOperation` transactions on NeoX.
 
 ## Features
 
@@ -112,7 +112,7 @@ yarn start     # Production
 
 ```bash
 curl http://localhost:3000/health
-# → {"status":"ok","entryPoint":"0x...","chain":"NeoX TestNet","chainId":2312251829}
+# → {"status":"ok","entryPoint":"0x...","chain":"NeoX","chainId":<chain-id>}
 ```
 
 ## Metrics
@@ -147,7 +147,7 @@ cast send $PAYMASTER \
 
 | Variable      | Default | Description                                  |
 | ------------- | ------- | -------------------------------------------- |
-| `RPC_URL`     | —       | NeoX TestNet RPC endpoint                    |
+| `RPC_URL`     | —       | NeoX RPC endpoint                             |
 | `PRIVATE_KEY` | —       | Bundler signer private key                   |
 | `ENTRYPOINT`  | —       | ERC-4337 EntryPoint contract address         |
 | `PAYMASTER`   | —       | SimplePaymaster contract address (for tests) |
@@ -211,15 +211,16 @@ cast send $PAYMASTER \
 | `LOG_LEVEL`                  | `INFO`  | DEBUG/INFO/WARN/ERROR         |
 | `MIN_BUNDLER_MARGIN_PERCENT` | `5`     | Minimum bundler profit margin |
 
-## Deployed Contracts (NeoX TestNet)
+## Deployed Contracts
 
-| Contract        | Address                                      |
-| --------------- | -------------------------------------------- |
-| EntryPoint      | `0x433709009B8330FDa32311DF1C2AFA402eD8D009` |
-| SimplePaymaster | `0xc44DD8e895162F56c1c3e3D40e0aE6Ec67345408` |
-| SmartAccount    | `0x36622A7314d9C2f47149e66C9Dd42763686Aab0E` |
-| Factory         | `0xdaf415b79d5fd2bfccd7846d5a1de9bfdb08a425` |
-| Policy          | `0x1212000000000000000000000000000000000002` |
+Deploy the required contracts (EntryPoint, account factory, paymaster, policy) on your target NeoX chain, then configure their addresses in `.env`.
+
+- **EntryPoint** — an ERC-4337 v0.8-compatible EntryPoint implementation
+- **Factory / SmartAccount** — the account factory and account implementation used by your senders
+- **Paymaster** — optional; required for sponsored UserOps
+- **Policy** — NeoX policy contract (if applicable)
+
+> Addresses are environment-specific and must be set via `ENTRYPOINT`, `PAYMASTER`, etc. in `.env`. See [`script/`](script/) for Foundry deployment scripts and `.env.example` for the full variable list.
 
 ## Environment Variables (.env)
 
@@ -250,7 +251,7 @@ curl -X POST http://localhost:3000 \
         "paymasterAndData": "0x",
         "signature": "0x..."
       },
-      "0x4337084d9e255ff0702461cf8895ce9e3b5ff108"
+      "0x..."  # EntryPoint address
     ]
   }'
 ```
@@ -314,7 +315,7 @@ Return userOpHash to client
 - **Smart Contracts**: Foundry + Solidity 0.8.28
 - **Storage**: JSON file-based persistence
 - **Server**: Express.js
-- **Network**: NeoX TestNet
+- **Network**: NeoX
 
 ## License
 

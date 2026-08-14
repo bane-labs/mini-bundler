@@ -33,8 +33,8 @@ const entryPoint = validateAddress("ENTRYPOINT", requireEnv("ENTRYPOINT"));
 // Chain identity is discovered from the configured RPC node at startup.
 // Fields are mutated by initChainConfig() so eth_chainId reflects the real network.
 const chainConfig = defineChain({
-    id: Number(process.env.CHAIN_ID ?? 2312251829),
-    name: process.env.CHAIN_NAME ?? "NeoX TestNet",
+    id: Number(process.env.CHAIN_ID ?? 47763),
+    name: process.env.CHAIN_NAME ?? "NeoX",
     nativeCurrency: {
         name: "NeoX Gas Token",
         symbol: "GAS",
@@ -47,7 +47,7 @@ const chainConfig = defineChain({
     blockExplorers: {
         default: {
             name: "NeoX Explorer",
-            url: process.env.BLOCK_EXPLORER_URL ?? "https://neoxt4scan.ngd.network",
+            url: process.env.BLOCK_EXPLORER_URL ?? "https://xexplorer.neo.org",
         },
     },
 });
