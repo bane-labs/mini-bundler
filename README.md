@@ -19,6 +19,7 @@ Implements the full ERC-4337 lifecycle: receive, validate, simulate, bundle, sub
 - **Monitoring** — Prometheus-format metrics at `/metrics`
 - **Structured Logging** — INFO/WARN/ERROR/DEBUG levels with UserOp context
 - **Aggregator** — `handleAggregatedOps` low-level support (not exposed via RPC)
+- **EIP-7702** — upgrades fresh EOA senders to smart accounts via ERC-7769 `eip7702Auth`: the bundler signs a type-4 transaction and attaches the authorization so the sender is upgraded in the same transaction that executes its first UserOp
 
 ## Architecture
 
@@ -38,6 +39,7 @@ src/
 ├── profit.ts                 # Bundler profit protection (gas cost vs max payment)
 ├── simulateValidation.ts     # EIP-4337 validation simulation
 ├── simulateHandleOp.ts       # handleOp execution simulation
+├── callEth.ts                # Map-format eth_call (NeoX stateOverride) helper
 │
 ├── rpc/                      # RPC handlers
 │   ├── index.ts
@@ -249,7 +251,15 @@ curl -X POST http://localhost:3000 \
         "preVerificationGas": "0xc350",
         "gasFees": "0x...",
         "paymasterAndData": "0x",
-        "signature": "0x..."
+        "signature": "0x...",
+        "eip7702Auth": {          # optional — EIP-7702 upgrade (ERC-7769)
+          "address": "0x...",     # account implementation to delegate to
+          "chainId": "0xba9304",   # must match the bundler chain
+          "nonce": "0x0",          # the EOA's own nonce at signing time
+          "yParity": "0x0",        # signature parity
+          "r": "0x...",           # signature r (32 bytes)
+          "s": "0x..."            # signature s (32 bytes)
+        }
       },
       "0x..."  # EntryPoint address
     ]
