@@ -1,3 +1,7 @@
+import { verifyAuthorization } from "viem/utils";
+import { publicClient } from "./clients.js";
+import { config } from "./config.js";
+import { BundlerRpcError } from "./aaErrors.js";
 import type { UserOperation, RawUserOperation } from "./types.js";
 
 /**
@@ -171,4 +175,70 @@ function parseEip7702Authorization(raw: unknown): import("./types.js").Eip7702Au
         r: auth.r as `0x${string}`,
         s: auth.s as `0x${string}`,
     };
+}
+
+/** secp256k1 curve order n. */
+const SECP256K1_N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
+/** Enforce low-s (non-malleable) signatures: s must be <= n/2. */
+const SECP256K1_N_HALF = SECP256K1_N / 2n;
+
+/**
+ * Verify an EIP-7702 authorization attached to a UserOp before simulation.
+ *
+ * Per ERC-4337 / ERR-7769, `eip7702Auth` MUST be a valid EIP-7702 authorization
+ * tuple signed by the sender. We enforce:
+ *   1. low-s (s <= n/2) — non-malleable signature
+ *   2. chainId matches the bundler chain, or is 0 (valid on any chain)
+ *   3. nonce equals the sender's current tx nonce (the one the upgrade spends)
+ *   4. recovered signer == userOp.sender
+ *
+ * Throws a BundlerRpcError (code -32602 invalid params) on any failure.
+ */
+export async function verifyEip7702Auth(userOp: UserOperation): Promise<void> {
+    const auth = userOp.eip7702Auth;
+    if (!auth) return;
+
+    // 1. Low-s: reject s > n/2 (malleable) per EIP-2. A real signer via viem/
+    //    ethers always produces low-s, so a high-s value is a tampered/forged sig.
+    if (BigInt(auth.s) > SECP256K1_N_HALF) {
+        throw new BundlerRpcError(-32602, "eip7702Auth.s must be low-s (s <= n/2)");
+    }
+
+    // 2. chainId: must equal the bundler chain, or 0 (valid on any chain, EIP-7702).
+    if (auth.chainId !== 0n && auth.chainId !== BigInt(config.chain.id)) {
+        throw new BundlerRpcError(
+            -32602,
+            `eip7702Auth.chainId ${auth.chainId} does not match current chain ${config.chain.id}`,
+        );
+    }
+
+    // 3. nonce: must equal the sender's current tx nonce (the EOA's own nonce
+    //    that the type-4 upgrade transaction will spend).
+    const senderNonce = await publicClient.getTransactionCount({
+        address: userOp.sender,
+        blockTag: "pending",
+    });
+    if (auth.nonce !== BigInt(senderNonce)) {
+        throw new BundlerRpcError(
+            -32602,
+            `eip7702Auth.nonce ${auth.nonce} does not match sender tx nonce ${senderNonce}`,
+        );
+    }
+
+    // 4. Signer recovery: the recovered address of the authorization signature
+    //    must equal the UserOp sender.
+    const valid = await verifyAuthorization({
+        address: userOp.sender,
+        authorization: {
+            address: auth.address,
+            chainId: Number(auth.chainId),
+            nonce: Number(auth.nonce),
+            yParity: Number(auth.yParity),
+            r: auth.r,
+            s: auth.s,
+        },
+    });
+    if (!valid) {
+        throw new BundlerRpcError(-32602, "eip7702Auth was not signed by the UserOp sender");
+    }
 }
