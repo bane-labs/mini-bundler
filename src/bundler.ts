@@ -24,6 +24,7 @@ import { metrics } from "./metrics/index.js";
 import { logger, childLogger } from "./logging/index.js";
 import type { MempoolEntry } from "./types.js";
 import { checkProfit } from "./profit.js";
+import { verifyEip7702Auth } from "./utils.js";
 
 const mempool = new Mempool();
 
@@ -89,6 +90,11 @@ export class Bundler {
             submittedAt: now,
             updatedAt: now,
         };
+
+        // EIP-7702: verify the auth signature, chainId, nonce and signer before
+        // simulation — otherwise a wrong-key auth is accepted by simulation and
+        // only fails on-chain later.
+        await verifyEip7702Auth(userOp);
 
         const validation = await simulateValidation(userOp);
 

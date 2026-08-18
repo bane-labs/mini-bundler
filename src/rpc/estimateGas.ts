@@ -20,20 +20,29 @@ const BUFFER_DENOM = 100n;
 const MIN_VERIFICATION_GAS = 100_000n;
 const MIN_CALL_GAS = 100_000n;
 
-/** Estimate gas for a low-level call and return the measured gas used. */
-async function estimateSimulationGas(data: Hex): Promise<bigint> {
-    // stateOverride injects the EntryPointSimulations code into the EntryPoint address.
-    return publicClient.estimateGas({
-        account: account.address,
-        to: config.entryPoint,
-        data,
-        stateOverride: [
-            {
-                address: config.entryPoint,
-                code: EntryPointSimulationsCode,
-            },
-        ],
+/** Estimate gas for simulateValidation/simulateHandleOp against the
+ * EntryPoint simulations bytecode, with a map-shaped stateOverride.
+ *
+ * NeoX RPC only applies a MAP stateOverride (indexed by address); viem's
+ * array format is silently ignored. For an EIP-7702 op whose sender is a
+ * fresh EOA, we also inject the delegation designator so the simulated
+ * call has code at the sender address.
+ */
+async function estimateSimulationGas(data: Hex, userOp: UserOperation): Promise<bigint> {
+    const mapOverride: Record<string, { code: Hex }> = {
+        [config.entryPoint.toLowerCase()]: { code: EntryPointSimulationsCode },
+    };
+    const auth = userOp.eip7702Auth;
+    if (auth) {
+        mapOverride[userOp.sender.toLowerCase()] = {
+            code: `0xef0100${auth.address.slice(2)}` as Hex,
+        };
+    }
+    const result = await publicClient.request({
+        method: "eth_estimateGas",
+        params: [{ from: account.address, to: config.entryPoint, data }, "latest", mapOverride],
     });
+    return BigInt(result as string);
 }
 
 export async function estimateUserOperationGas(userOp: UserOperation): Promise<{
@@ -55,7 +64,7 @@ export async function estimateUserOperationGas(userOp: UserOperation): Promise<{
     let validationGasUsed = 0n;
 
     try {
-        validationGasUsed = await estimateSimulationGas(validationData);
+        validationGasUsed = await estimateSimulationGas(validationData, userOp);
     } catch (error: unknown) {
         logger.warn(`Gas estimate: simulateValidation failed: ${error instanceof Error ? error.message : "unknown"}`);
     }
@@ -75,7 +84,7 @@ export async function estimateUserOperationGas(userOp: UserOperation): Promise<{
     let handleOpGasUsed = 0n;
 
     try {
-        handleOpGasUsed = await estimateSimulationGas(handleOpData);
+        handleOpGasUsed = await estimateSimulationGas(handleOpData, userOp);
     } catch (error: unknown) {
         logger.warn(`Gas estimate: simulateHandleOp failed: ${error instanceof Error ? error.message : "unknown"}`);
     }
@@ -120,7 +129,13 @@ function estimatePreVerificationGas(userOp: UserOperation): bigint {
     const base = 21_000n;
     const overhead = 100_000n;
 
-    return base + overhead + callDataCost + initCodeCost + paymasterCost + sigCost;
+    // A fresh EOA upgraded via EIP-7702 costs an extra 50,000 gas to set its
+    // code (GAS_AUTHORIZATION / PER_EMPTY_ACCOUNT_COST). The caller must cover
+    // this via preVerificationGas, otherwise the handleOps tx will run out of
+    // gas when upgrading the sender.
+    const authCost = userOp.eip7702Auth ? 50_000n : 0n;
+
+    return base + overhead + callDataCost + initCodeCost + paymasterCost + sigCost + authCost;
 }
 
 function calcCalldataCost(data: `0x${string}`): bigint {

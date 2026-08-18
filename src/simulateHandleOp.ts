@@ -26,9 +26,9 @@ export async function simulateHandleOp(userOp: UserOperation): Promise<Execution
         overrides[userOp.sender.toLowerCase()] = {
             // Delegation designator (0xef0100 + implementation). eth_call does
             // not execute tx-level authorizations, so we simulate the EOA as
-            // already upgraded. Inject balance so it can cover prefund.
+            // already upgraded. Do NOT inject a fake balance — a 0-balance
+            // sender with no paymaster must fail AA21 (prefund unpayable).
             code: `0xef0100${auth.address.slice(2)}` as Hex,
-            balance: 10n * 10n ** 18n,
         };
     }
     try {
