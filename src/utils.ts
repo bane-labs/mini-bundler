@@ -185,12 +185,15 @@ const SECP256K1_N_HALF = SECP256K1_N / 2n;
 /**
  * Verify an EIP-7702 authorization attached to a UserOp before simulation.
  *
- * Per ERC-4337 / ERR-7769, `eip7702Auth` MUST be a valid EIP-7702 authorization
+ * Per ERC-4337 / EIP-7702, `eip7702Auth` MUST be a valid EIP-7702 authorization
  * tuple signed by the sender. We enforce:
  *   1. low-s (s <= n/2) — non-malleable signature
  *   2. chainId matches the bundler chain, or is 0 (valid on any chain)
  *   3. nonce equals the sender's current tx nonce (the one the upgrade spends)
  *   4. recovered signer == userOp.sender
+ *   5. if the sender already has code, it must be an EIP-7702 delegation
+ *      designator (0xef0100 + delegate) — a contract or otherwise-non-delegated
+ *      sender cannot be upgraded, so its op would fail on-chain.
  *
  * Throws a BundlerRpcError (code -32602 invalid params) on any failure.
  */
@@ -240,5 +243,19 @@ export async function verifyEip7702Auth(userOp: UserOperation): Promise<void> {
     });
     if (!valid) {
         throw new BundlerRpcError(-32602, "eip7702Auth was not signed by the UserOp sender");
+    }
+
+    // 5. Sender code: the EntryPoint reads the sender's code via extcodecopy
+    //    and requires it to be an EIP-7702 delegation designator (0xef0100 +
+    //    delegate). A sender that already has OTHER code (a deployed contract,
+    //    or a non-delegation account) cannot be upgraded by the type-4 auth and
+    //    its op would revert on-chain with Eip7702SenderNotDelegate. A fresh EOA
+    //    (no code) or an already-delegated account is fine.
+    const senderCode = await publicClient.getCode({ address: userOp.sender });
+    if (senderCode && senderCode !== "0x" && !senderCode.startsWith("0xef0100")) {
+        throw new BundlerRpcError(
+            -32602,
+            `eip7702Auth cannot upgrade sender ${userOp.sender}: address already has code that is not an EIP-7702 delegation designator`,
+        );
     }
 }

@@ -6,6 +6,7 @@ import { entryPointAbi } from "./abi.js";
 import type { UserOperation } from "./types.js";
 import { estimateGasFees } from "./gas/index.js";
 import { HANDLE_OPS_TIMEOUT_MS, DEFAULT_AGGREGATOR_VALIDATION_GAS } from "./constants.js";
+import { logger } from "./logging/index.js";
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
     return Promise.race([
@@ -26,7 +27,14 @@ function collectAuthorizations(ops: UserOperation[]): SignedAuthorization[] {
     for (const op of ops) {
         if (!op.eip7702Auth) continue;
         const key = op.sender.toLowerCase();
-        if (seen.has(key)) continue;
+        if (seen.has(key)) {
+            // A later op from the same sender carries an auth that is silently
+            // dropped (only the first auth per sender is used). This is an edge
+            // case worth surfacing for inspection — the dropped auth may be the
+            // one the user actually intended.
+            logger.warn(`Dropping duplicate eip7702Auth for sender ${op.sender} (op nonce=${op.nonce}): only the first auth per sender is attached to the type-4 tx`);
+            continue;
+        }
         seen.add(key);
         const a = op.eip7702Auth;
         auths.push({
