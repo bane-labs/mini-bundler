@@ -156,8 +156,14 @@ export class Bundler {
     async processBatch(batch: MempoolEntry[]) {
         if (batch.length === 0) return;
 
-        const ops = batch.map((e) => e.storedOp.userOp);
-        const bundle = buildBundle(batch.map((e) => e.storedOp));
+        // buildBundle may drop ops that exceed the bundle max size / gas, so we
+        // must submit & track exactly what buildBundle selected — not the whole
+        // batch. Submitting the full batch would pack non-bundled ops into the
+        // handleOps calldata and could blow the bundle gas limit.
+        const bundle = buildBundle(batch.map((e) => e.storedOp), bundleConfig);
+        if (bundle.ops.length === 0) return;
+
+        const ops = bundle.ops.map((storedOp) => storedOp.userOp);
 
         logger.info(`Processing bundle ${bundle.id}: ${bundle.ops.length} ops, gas=${bundle.totalGas}`);
 
@@ -167,12 +173,12 @@ export class Bundler {
             metrics.incBundlesSubmitted();
             metrics.incOpsSubmitted(bundle.ops.length);
 
-            for (const entry of batch) {
-                entry.storedOp.txHash = txHash;
-                entry.storedOp.status = "submitted";
-                entry.storedOp.updatedAt = Date.now();
-                storeUserOp(entry.storedOp);
-                mempool.markSubmitted(entry.storedOp.userOp.sender, entry.storedOp.userOp.nonce, txHash);
+            for (const op of bundle.ops) {
+                op.txHash = txHash;
+                op.status = "submitted";
+                op.updatedAt = Date.now();
+                storeUserOp(op);
+                mempool.markSubmitted(op.userOp.sender, op.userOp.nonce, txHash);
                 metrics.decPendingOps();
             }
 
@@ -181,26 +187,26 @@ export class Bundler {
             const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
             logger.info(`Bundle ${bundle.id} confirmed: status=${receipt.status}`);
 
-            for (const entry of batch) {
+            for (const op of bundle.ops) {
                 if (receipt.status === "success") {
-                    recordIncluded(entry.storedOp.userOp.sender, "sender");
-                    entry.storedOp.status = "included";
-                    metrics.recordConfirmationTime(Date.now() - entry.storedOp.submittedAt);
+                    recordIncluded(op.userOp.sender, "sender");
+                    op.status = "included";
+                    metrics.recordConfirmationTime(Date.now() - op.submittedAt);
                 } else {
-                    recordExecutionFailure(entry.storedOp.userOp.sender, "sender");
-                    entry.storedOp.status = "reverted";
+                    recordExecutionFailure(op.userOp.sender, "sender");
+                    op.status = "reverted";
                     metrics.incExecutionFailures();
                 }
-                entry.storedOp.updatedAt = Date.now();
-                storeUserOp(entry.storedOp);
+                op.updatedAt = Date.now();
+                storeUserOp(op);
             }
         } catch (err: unknown) {
             logger.error(`Bundle ${bundle.id} failed: ${(err as Error).message ?? "unknown"}`);
-            for (const entry of batch) {
-                entry.storedOp.status = "failed";
-                entry.storedOp.updatedAt = Date.now();
-                storeUserOp(entry.storedOp);
-                mempool.remove(entry.storedOp.userOp.sender, entry.storedOp.userOp.nonce);
+            for (const op of bundle.ops) {
+                op.status = "failed";
+                op.updatedAt = Date.now();
+                storeUserOp(op);
+                mempool.remove(op.userOp.sender, op.userOp.nonce);
                 metrics.incExecutionFailures();
             }
         }
