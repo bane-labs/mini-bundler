@@ -10,7 +10,7 @@ contract DeployPaymaster is Script {
         address entryPoint = vm.envAddress("ENTRYPOINT");
 
         vm.startBroadcast(privateKey);
-        SimplePaymaster paymaster = new SimplePaymaster(IEntryPoint(entryPoint));
+        SimplePaymaster paymaster = new SimplePaymaster(IEntryPoint(entryPoint), vm.addr(privateKey));
         vm.stopBroadcast();
 
         console.log("SimplePaymaster deployed at:", address(paymaster));

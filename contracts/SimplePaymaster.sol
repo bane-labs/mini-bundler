@@ -13,13 +13,12 @@ import "@account-abstraction/contracts/core/BasePaymaster.sol";
  *   3. postOp is a no-op (empty context)
  */
 contract SimplePaymaster is BasePaymaster {
-    uint256 public constant SIG_VALIDATION_SUCCESS = 0;
-
     event Deposited(address indexed sender, uint256 amount);
 
     constructor(
-        IEntryPoint _entryPoint
-    ) BasePaymaster(_entryPoint) {}
+        IEntryPoint _entryPoint,
+        address owner
+    ) BasePaymaster(_entryPoint, owner) {}
 
     /// @dev Override to skip ERC-165 check (NeoX EntryPoint v0.7 doesn't support it)
     function _validateEntryPointInterface(IEntryPoint) internal pure override {}
@@ -53,13 +52,13 @@ contract SimplePaymaster is BasePaymaster {
 
     /// @notice Deposit ETH into EntryPoint to cover gas costs.
     function depositEth() external payable {
-        entryPoint.depositTo{value: msg.value}(address(this));
+        _entryPoint.depositTo{value: msg.value}(address(this));
         emit Deposited(msg.sender, msg.value);
     }
 
     /// @notice Convenience: owner can deposit directly by sending ETH.
     receive() external payable {
-        entryPoint.depositTo{value: msg.value}(address(this));
+        _entryPoint.depositTo{value: msg.value}(address(this));
         emit Deposited(msg.sender, msg.value);
     }
 }
