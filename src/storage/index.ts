@@ -44,6 +44,14 @@ function ensureLoaded() {
                         ...op.userOp,
                         nonce: BigInt(op.userOp.nonce),
                         preVerificationGas: BigInt(op.userOp.preVerificationGas),
+                        eip7702Auth: op.userOp.eip7702Auth
+                            ? {
+                                  ...op.userOp.eip7702Auth,
+                                  chainId: BigInt(op.userOp.eip7702Auth.chainId),
+                                  nonce: BigInt(op.userOp.eip7702Auth.nonce),
+                                  yParity: BigInt(op.userOp.eip7702Auth.yParity),
+                              }
+                            : undefined,
                     },
                 });
             }
@@ -65,6 +73,14 @@ function persist() {
                 ...val.userOp,
                 nonce: "0x" + val.userOp.nonce.toString(16),
                 preVerificationGas: "0x" + val.userOp.preVerificationGas.toString(16),
+                eip7702Auth: val.userOp.eip7702Auth
+                    ? {
+                          ...val.userOp.eip7702Auth,
+                          chainId: "0x" + val.userOp.eip7702Auth.chainId.toString(16),
+                          nonce: "0x" + val.userOp.eip7702Auth.nonce.toString(16),
+                          yParity: "0x" + val.userOp.eip7702Auth.yParity.toString(16),
+                      }
+                    : undefined,
             },
             receipt: val.receipt
                 ? {
