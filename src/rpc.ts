@@ -47,7 +47,13 @@ function rpcResult(res: Response, id: number | string | null, result: unknown) {
 
 export async function rpcHandler(req: Request, res: Response) {
     const clientIp = req.ip || req.socket.remoteAddress || "unknown";
-    const { id, method, params } = req.body;
+    // Guard against empty / malformed bodies before destructuring — otherwise
+    // "Cannot destructure property 'id' of req.body" crashes the handler.
+    const body = req.body;
+    if (body === undefined || body === null || typeof body !== "object" || Array.isArray(body)) {
+        return rpcError(res, null, -32600, "Invalid Request: empty or malformed body");
+    }
+    const { id, method, params } = body;
 
     if (id === undefined) {
         return rpcError(res, null, -32600, "Missing required field: id");

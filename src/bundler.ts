@@ -1,6 +1,6 @@
 import { handleOps as submitHandleOps } from "./entrypoint.js";
 import { publicClient } from "./clients.js";
-import { config, bundleConfig, profitConfig } from "./config.js";
+import { config, bundleConfig, mempoolConfig, profitConfig } from "./config.js";
 import { entryPointAbi } from "./abi.js";
 import type { UserOperation, StoredUserOp, PendingUserOp } from "./types.js";
 import { encodeFunctionData, type Hex } from "viem";
@@ -26,7 +26,7 @@ import type { MempoolEntry } from "./types.js";
 import { checkProfit } from "./profit.js";
 import { verifyEip7702Auth } from "./utils.js";
 
-const mempool = new Mempool();
+const mempool = new Mempool(mempoolConfig);
 
 function dedupKey(userOp: UserOperation): string {
     const nonceHex = "0x" + userOp.nonce.toString(16);
@@ -178,10 +178,13 @@ export class Bundler {
                 op.status = "submitted";
                 op.updatedAt = Date.now();
                 storeUserOp(op);
-                mempool.markSubmitted(op.userOp.sender, op.userOp.nonce, txHash);
+                // Release the mempool slot as soon as the bundle is submitted:
+                // on-chain status is tracked by persistent storage. Holding
+                // settled entries in the in-memory queue would hit maxSize →
+                // "Mempool full" (evictExpired only drops unsubmitted entries).
+                mempool.remove(op.userOp.sender, op.userOp.nonce);
                 metrics.decPendingOps();
             }
-
             logger.info(`Bundle ${bundle.id} submitted: tx=${txHash}`);
 
             const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });

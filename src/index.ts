@@ -30,6 +30,19 @@ app.get("/metrics", (_req, res) => {
 
 app.post("/", rpcHandler);
 
+// Convert body-parser failures (malformed JSON) into JSON-RPC errors instead
+// of Express's default HTML 500.
+app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err instanceof SyntaxError) {
+        return res.status(400).json({
+            jsonrpc: "2.0",
+            id: null,
+            error: { code: -32600, message: "Invalid Request: malformed JSON body" },
+        });
+    }
+    next(err);
+});
+
 async function start() {
     await initChainConfig();
 
